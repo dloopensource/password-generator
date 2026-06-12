@@ -12,6 +12,7 @@ dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py311"
