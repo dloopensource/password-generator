@@ -209,16 +209,43 @@ Expected: PASS.
 
 - [ ] **Step 5: Write failing tests for selected character sets**
 
-Add parameterized tests covering lowercase, uppercase, digits, and punctuation individually. Add a combined test that requests all four sets and asserts:
+Add parameterized tests covering lowercase, uppercase, digits, and punctuation individually. Add a deterministic combined test that monkeypatches the generator module's `secrets.choice` and `secrets.randbelow`:
 
 ```python
+def fake_choice(pool: str) -> str:
+    representatives = {
+        string.ascii_lowercase: "a",
+        string.ascii_uppercase: "A",
+        string.digits: "0",
+        string.punctuation: "!",
+    }
+    return representatives.get(pool, "a")
+
+
+monkeypatch.setattr(password_generator.secrets, "choice", fake_choice)
+monkeypatch.setattr(
+    password_generator.secrets,
+    "randbelow",
+    lambda upper_bound: upper_bound - 1,
+)
+
+password = generate_password(
+    8,
+    include_lowercase=True,
+    include_uppercase=True,
+    include_digits=True,
+    include_special=True,
+)
+
 assert any(character in string.ascii_lowercase for character in password)
 assert any(character in string.ascii_uppercase for character in password)
 assert any(character in string.digits for character in password)
 assert any(character in string.punctuation for character in password)
 ```
 
-Also assert that characters never come from unselected sets.
+The fake returns a distinct representative for each individual character set, returns lowercase for the combined pool, and makes the shuffle deterministic. This ensures an incorrect implementation that samples every character from only the combined pool fails reliably instead of passing by chance.
+
+Also assert that characters never come from unselected sets. Property-only tests may still exercise normal secure randomness for length and membership checks, but the selected-set representation guarantee must use the deterministic test above.
 
 - [ ] **Step 6: Implement guaranteed set representation**
 
@@ -440,6 +467,8 @@ Also simulate `pyperclip` being unavailable and assert that:
 - `main(["--cb"])` returns `1` with the same concise stderr prefix.
 - `main([])` still succeeds without importing `pyperclip`.
 
+Patch `builtins.__import__` only for the name `"pyperclip"` to raise `ImportError`, delegating every other import to the real import function. This verifies the lazy-import path without removing unrelated modules from `sys.modules`.
+
 - [ ] **Step 3: Run clipboard tests**
 
 Run:
@@ -452,7 +481,29 @@ Expected: FAIL because clipboard handling is not implemented.
 
 - [ ] **Step 4: Implement clipboard handling**
 
-Import `pyperclip` lazily inside the `--cb` branch, call `pyperclip.copy(password)` before printing, and catch both `ImportError` and `pyperclip.PyperclipException`. Write the defined error message to stderr and return `1` on failure. Do not import or reference `pyperclip` when `--cb` is not requested.
+Import `pyperclip` lazily inside the `--cb` branch. Handle import and copy failures in separate `try` blocks so `pyperclip.PyperclipException` is never referenced unless the module was bound successfully:
+
+```python
+try:
+    import pyperclip
+except ImportError as error:
+    print(
+        f"error: unable to copy password to clipboard: {error}",
+        file=sys.stderr,
+    )
+    return 1
+
+try:
+    pyperclip.copy(password)
+except pyperclip.PyperclipException as error:
+    print(
+        f"error: unable to copy password to clipboard: {error}",
+        file=sys.stderr,
+    )
+    return 1
+```
+
+Print the password only after clipboard copying succeeds. Do not import or reference `pyperclip` when `--cb` is not requested.
 
 - [ ] **Step 5: Verify clipboard behavior**
 
