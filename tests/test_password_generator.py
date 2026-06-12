@@ -52,6 +52,8 @@ def test_password_uses_only_the_selected_character_set(
 
 
 def test_password_represents_every_selected_character_set(monkeypatch):
+    randbelow_upper_bounds = []
+
     def fake_choice(pool):
         representatives = {
             string.ascii_lowercase: "a",
@@ -61,12 +63,12 @@ def test_password_represents_every_selected_character_set(monkeypatch):
         }
         return representatives.get(pool, "a")
 
+    def fake_randbelow(upper_bound):
+        randbelow_upper_bounds.append(upper_bound)
+        return upper_bound - 1
+
     monkeypatch.setattr(password_generator.secrets, "choice", fake_choice)
-    monkeypatch.setattr(
-        password_generator.secrets,
-        "randbelow",
-        lambda upper_bound: upper_bound - 1,
-    )
+    monkeypatch.setattr(password_generator.secrets, "randbelow", fake_randbelow)
 
     password = generate_password(
         length=8,
@@ -77,6 +79,7 @@ def test_password_represents_every_selected_character_set(monkeypatch):
     )
 
     assert len(password) == 8
+    assert randbelow_upper_bounds == [8, 7, 6, 5, 4, 3, 2]
     assert any(character in string.ascii_lowercase for character in password)
     assert any(character in string.ascii_uppercase for character in password)
     assert any(character in string.digits for character in password)
