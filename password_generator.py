@@ -1,3 +1,4 @@
+import argparse
 import secrets
 import string
 
@@ -44,3 +45,74 @@ def generate_password(
         )
 
     return "".join(characters)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-l",
+        dest="length",
+        type=int,
+        default=8,
+        help="Password length (default: 8)",
+    )
+    parser.add_argument(
+        "-c",
+        dest="include_lowercase",
+        action="store_true",
+        help="Include lowercase letters",
+    )
+    parser.add_argument(
+        "-u",
+        dest="include_uppercase",
+        action="store_true",
+        help="Include uppercase letters",
+    )
+    parser.add_argument(
+        "-d",
+        dest="include_digits",
+        action="store_true",
+        help="Include digits",
+    )
+    parser.add_argument(
+        "-s",
+        dest="include_special",
+        action="store_true",
+        help="Include special characters",
+    )
+    parser.add_argument(
+        "--cb",
+        dest="copy_to_clipboard",
+        action="store_true",
+        help="Copy the generated password to the clipboard",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    arguments = parser.parse_args(argv)
+    any_character_set_selected = any(
+        (
+            arguments.include_lowercase,
+            arguments.include_uppercase,
+            arguments.include_digits,
+            arguments.include_special,
+        )
+    )
+
+    try:
+        password = generate_password(
+            length=arguments.length,
+            include_lowercase=(
+                arguments.include_lowercase or not any_character_set_selected
+            ),
+            include_uppercase=arguments.include_uppercase,
+            include_digits=arguments.include_digits,
+            include_special=arguments.include_special,
+        )
+    except ValueError as error:
+        parser.error(str(error))
+
+    print(password)
+    return 0
