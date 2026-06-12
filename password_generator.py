@@ -1,6 +1,7 @@
 import argparse
 import secrets
 import string
+import sys
 
 
 def generate_password(
@@ -113,6 +114,25 @@ def main(argv: list[str] | None = None) -> int:
         )
     except ValueError as error:
         parser.error(str(error))
+
+    if arguments.copy_to_clipboard:
+        try:
+            import pyperclip
+        except ImportError as error:
+            print(
+                f"error: unable to copy password to clipboard: {error}",
+                file=sys.stderr,
+            )
+            return 1
+
+        try:
+            pyperclip.copy(password)
+        except pyperclip.PyperclipException as error:
+            print(
+                f"error: unable to copy password to clipboard: {error}",
+                file=sys.stderr,
+            )
+            return 1
 
     print(password)
     return 0
