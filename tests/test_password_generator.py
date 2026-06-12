@@ -1,7 +1,8 @@
 import string
 
-import password_generator
 import pytest
+
+import password_generator
 from password_generator import generate_password
 
 
@@ -135,3 +136,135 @@ def test_password_allows_length_equal_to_selected_set_count():
     assert any(character in string.ascii_uppercase for character in password)
     assert any(character in string.digits for character in password)
     assert any(character in string.punctuation for character in password)
+
+
+def test_parser_defaults_to_length_eight():
+    arguments = password_generator.build_parser().parse_args([])
+
+    assert arguments.length == 8
+
+
+def test_parser_accepts_password_length():
+    arguments = password_generator.build_parser().parse_args(["-l", "12"])
+
+    assert arguments.length == 12
+
+
+@pytest.mark.parametrize(
+    ("flag", "destination"),
+    [
+        ("-c", "include_lowercase"),
+        ("-u", "include_uppercase"),
+        ("-d", "include_digits"),
+        ("-s", "include_special"),
+    ],
+)
+def test_parser_accepts_each_character_flag(flag, destination):
+    arguments = password_generator.build_parser().parse_args([flag])
+
+    assert getattr(arguments, destination) is True
+
+
+def test_parser_accepts_all_character_flags():
+    arguments = password_generator.build_parser().parse_args(["-c", "-u", "-d", "-s"])
+
+    assert arguments.include_lowercase is True
+    assert arguments.include_uppercase is True
+    assert arguments.include_digits is True
+    assert arguments.include_special is True
+
+
+def test_parser_accepts_clipboard_flag():
+    arguments = password_generator.build_parser().parse_args(["--cb"])
+
+    assert arguments.copy_to_clipboard is True
+
+
+def test_parser_help_lists_every_flag_and_exits_successfully(capsys):
+    parser = password_generator.build_parser()
+
+    with pytest.raises(SystemExit) as error:
+        parser.parse_args(["--help"])
+
+    assert error.value.code == 0
+    help_output = capsys.readouterr().out
+    for flag in ("-h", "--help", "-l", "-c", "-u", "-d", "-s", "--cb"):
+        assert flag in help_output
+
+
+def test_main_defaults_to_lowercase_only(monkeypatch):
+    calls = []
+
+    def fake_generate_password(**keyword_arguments):
+        calls.append(keyword_arguments)
+        return "password"
+
+    monkeypatch.setattr(password_generator, "generate_password", fake_generate_password)
+
+    assert password_generator.main([]) == 0
+    assert calls == [
+        {
+            "length": 8,
+            "include_lowercase": True,
+            "include_uppercase": False,
+            "include_digits": False,
+            "include_special": False,
+        }
+    ]
+
+
+def test_main_enables_only_explicit_character_flags(monkeypatch):
+    calls = []
+
+    def fake_generate_password(**keyword_arguments):
+        calls.append(keyword_arguments)
+        return "A0A0A0A0"
+
+    monkeypatch.setattr(password_generator, "generate_password", fake_generate_password)
+
+    assert password_generator.main(["-u", "-d"]) == 0
+    assert calls == [
+        {
+            "length": 8,
+            "include_lowercase": False,
+            "include_uppercase": True,
+            "include_digits": True,
+            "include_special": False,
+        }
+    ]
+
+
+def test_main_prints_generated_password_once_and_returns_success(capsys, monkeypatch):
+    monkeypatch.setattr(
+        password_generator,
+        "generate_password",
+        lambda **keyword_arguments: "generated-password",
+    )
+
+    result = password_generator.main([])
+
+    assert result == 0
+    captured = capsys.readouterr()
+    assert captured.out == "generated-password\n"
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (["-l", "0"], "password length must be at least 1"),
+        (
+            ["-l", "1", "-c", "-u"],
+            "password length must be at least the number of selected character sets",
+        ),
+    ],
+)
+def test_main_reports_invalid_lengths_as_cli_errors(arguments, message, capsys):
+    with pytest.raises(SystemExit) as error:
+        password_generator.main(arguments)
+
+    assert error.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "error:" in captured.err
+    assert message in captured.err
