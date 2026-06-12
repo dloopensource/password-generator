@@ -1,5 +1,7 @@
+import builtins
 import string
 
+import pyperclip
 import pytest
 
 import password_generator
@@ -268,3 +270,88 @@ def test_main_reports_invalid_lengths_as_cli_errors(arguments, message, capsys):
     assert captured.out == ""
     assert "error:" in captured.err
     assert message in captured.err
+
+
+def test_clipboard_copies_and_prints_generated_password(capsys, monkeypatch):
+    copied_passwords = []
+    monkeypatch.setattr(
+        password_generator,
+        "generate_password",
+        lambda **keyword_arguments: "known-password",
+    )
+    monkeypatch.setattr(pyperclip, "copy", copied_passwords.append)
+
+    result = password_generator.main(["--cb"])
+
+    assert result == 0
+    assert copied_passwords == ["known-password"]
+    captured = capsys.readouterr()
+    assert captured.out == "known-password\n"
+    assert captured.err == ""
+
+
+def test_clipboard_copy_failure_reports_error_without_printing(capsys, monkeypatch):
+    def fail_copy(password):
+        raise pyperclip.PyperclipException("clipboard unavailable")
+
+    monkeypatch.setattr(
+        password_generator,
+        "generate_password",
+        lambda **keyword_arguments: "known-password",
+    )
+    monkeypatch.setattr(pyperclip, "copy", fail_copy)
+
+    result = password_generator.main(["--cb"])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("error: unable to copy password to clipboard:")
+
+
+def test_clipboard_unavailable_dependency_reports_error(capsys, monkeypatch):
+    real_import = builtins.__import__
+
+    def import_without_pyperclip(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pyperclip":
+            raise ImportError("pyperclip unavailable")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(
+        password_generator,
+        "generate_password",
+        lambda **keyword_arguments: "known-password",
+    )
+    monkeypatch.setattr(builtins, "__import__", import_without_pyperclip)
+
+    result = password_generator.main(["--cb"])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("error: unable to copy password to clipboard:")
+
+
+def test_clipboard_dependency_is_not_imported_without_flag(capsys, monkeypatch):
+    real_import = builtins.__import__
+    pyperclip_imports = []
+
+    def track_pyperclip_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pyperclip":
+            pyperclip_imports.append(name)
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(
+        password_generator,
+        "generate_password",
+        lambda **keyword_arguments: "known-password",
+    )
+    monkeypatch.setattr(builtins, "__import__", track_pyperclip_import)
+
+    result = password_generator.main([])
+
+    assert result == 0
+    assert pyperclip_imports == []
+    captured = capsys.readouterr()
+    assert captured.out == "known-password\n"
+    assert captured.err == ""
